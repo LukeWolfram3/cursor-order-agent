@@ -99,6 +99,10 @@ describe('Shopify location queries', () => {
 			{ cursor: null },
 			{ cursor: 'company-page-2' },
 		]);
+		const firstQuery = shopifyGraphQLMock.mock.calls[0]?.[0].query;
+		expect(firstQuery).toContain('companyLocations(first: 250, after: $cursor)');
+		expect(firstQuery).toContain('roleAssignments(first: 10)');
+		expect(firstQuery).toContain('defaultEmailAddress { emailAddress }');
 	});
 
 	it('returns customers from every role-assignment page', async () => {
