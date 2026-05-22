@@ -1,10 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Tool, ToolUseBlock } from '@anthropic-ai/sdk/resources/messages.mjs';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { AppEnv } from '../types.js';
 import { locationResearchMatchSchema, type LocationResearchMatch } from '../lib/schemas.js';
 import { loadPrompt } from '../lib/prompts.js';
-import { getAnthropicClient, resolveModel } from '../lib/anthropic-client.js';
+import { getAnthropicClient, resolveModel, zodToolSchema } from '../lib/anthropic-client.js';
 import { log, errorFields } from '../lib/log.js';
 
 const OUTPUT_TOOL_NAME = 'submit_location_match';
@@ -42,14 +41,11 @@ export async function runLocationResearchMatcherSubAgent(input: {
 		const client = getAnthropicClient(input.env.ANTHROPIC_API_KEY);
 		const model = resolveModel(input.env, 'matcher');
 
-		const outputTool: Tool = {
-			name: OUTPUT_TOOL_NAME,
-			description: 'Submit the location research match result.',
-			input_schema: zodToJsonSchema(locationResearchMatchSchema, {
-				name: OUTPUT_TOOL_NAME,
-				$refStrategy: 'none',
-			}) as Tool['input_schema'],
-		};
+		const outputTool = zodToolSchema(
+			locationResearchMatchSchema,
+			OUTPUT_TOOL_NAME,
+			'Submit the location research match result.',
+		);
 
 		const webSearchTool = {
 			type: 'web_search_20250305' as const,
