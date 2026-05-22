@@ -1,9 +1,5 @@
 {
-	"build": {
-		"dockerfile": "../Dockerfile",
-		"context": ".."
-	},
-	"install": "pnpm install",
+	"install": "corepack enable && pnpm install",
 	"start": "echo ready",
 	"terminals": []
 }
