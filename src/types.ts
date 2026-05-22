@@ -62,6 +62,7 @@ export interface GraphAttachment {
 	readonly isInline?: boolean;
 	readonly contentId?: string | null;
 	readonly contentBytes?: string;
+	readonly contentBytesRef?: string;
 }
 
 export interface GraphAttachmentsResponse {

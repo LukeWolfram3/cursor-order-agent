@@ -92,6 +92,12 @@ Paste a Microsoft Graph-shaped JSON payload into Cursor chat (see `test-data/ema
 
 The `trace` array lists tool phases (`tool.start` / `tool.completed`) for iteration.
 
+### Attachment byte handling
+
+The MCP server stages Graph attachment `contentBytes` in process memory by `message.id` + `attachment.id` before invoking classifier/order agents. Agent prompts and the order-specialist tool loop receive only attachment metadata and byte-availability flags; the extractor resolves staged bytes internally when `extract_order_data` is called with `attachmentIds`.
+
+For Cursor chat/automation routing, pass full attachment bytes to `classify_email` once, then omit `contentBytes` from the `run_order_specialist` graph for the same message. For webhook/server-side runs, the HTTP pipeline stages bytes before classification and reuses the sanitized graph for the order specialist automatically.
+
 ## Troubleshooting
 
 - `401 authentication_error: invalid x-api-key` from `classify_email` means the MCP server reached Anthropic, but the configured `ANTHROPIC_API_KEY` was rejected. Verify or rotate the Anthropic key in the MCP server/automation secrets, then rerun the automation.

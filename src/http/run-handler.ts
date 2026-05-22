@@ -9,6 +9,7 @@ import { getAppEnv } from '../lib/env.js';
 import { log, errorFields } from '../lib/log.js';
 import { runClassifierSubAgent } from '../sub-agents/classifier.js';
 import { runOrderSpecialistSubAgent } from '../sub-agents/order-specialist.js';
+import { stageGraphAttachmentBytes } from '../lib/attachments/byte-store.js';
 import { checkBearerAuth, getWebhookSecret } from './auth.js';
 import { sendJson } from './responses.js';
 
@@ -40,12 +41,13 @@ export function parseWebhookBody(body: unknown): WebhookRunInput | null {
 
 export async function runSalesOpsPipeline(input: WebhookRunInput): Promise<WebhookRunResult> {
 	const env = getAppEnv();
-	const classification = await runClassifierSubAgent({ env, graph: input.graph });
+	const graph = stageGraphAttachmentBytes(input.graph);
+	const classification = await runClassifierSubAgent({ env, graph });
 
 	if (classification.specialist === 'order' && classification.confidence >= 0.5) {
 		const orderSpecialist = await runOrderSpecialistSubAgent({
 			env,
-			graph: input.graph,
+			graph,
 			classificationReason: classification.reason,
 		});
 		return {
