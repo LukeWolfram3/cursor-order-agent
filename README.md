@@ -32,6 +32,44 @@ Run the MCP server (stdio):
 pnpm mcp
 ```
 
+Run the HTTP webhook server (for external callers / Power Automate):
+
+```bash
+pnpm webhook
+```
+
+Listens on `PORT` (default **8787**). Endpoints:
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `POST` | `/webhook` or `/run` | `Authorization: Bearer $WEBHOOK_SECRET` | Classify email + run order specialist when applicable |
+| `GET` | `/health` | none | Liveness check |
+
+Request body (Graph-shaped JSON):
+
+```json
+{
+  "graph": {
+    "message": { "id": "...", "subject": "...", "body": { "contentType": "text", "content": "..." } },
+    "attachments": { "value": [] }
+  },
+  "prompt": "optional free-text note for logging/metadata"
+}
+```
+
+Response: `{ classification, orderSpecialist?, message?, prompt? }`. The pipeline mirrors the Cursor orchestrator: classify first; if `specialist === "order"` and `confidence >= 0.5`, run the order specialist; otherwise return classification only.
+
+Example:
+
+```bash
+curl -sS -X POST "http://localhost:8787/webhook" \
+  -H "Authorization: Bearer $WEBHOOK_SECRET" \
+  -H "Content-Type: application/json" \
+  -d @test-data/emails/sample.json
+```
+
+After deploy, point external callers at `https://<your-host>/webhook` (or `/run`) with the same Bearer token. Set `WEBHOOK_SECRET` (or `WEBHOOK_API_KEY`) plus the Shopify/Anthropic env vars on the host.
+
 ## Cursor automation setup
 
 1. Repo: [LukeWolfram3/cursor-order-agent](https://github.com/LukeWolfram3/cursor-order-agent).
@@ -104,5 +142,6 @@ Key files:
 | Script | Purpose |
 |--------|---------|
 | `pnpm mcp` | Start stdio MCP server |
+| `pnpm webhook` | Start HTTP webhook server (`POST /webhook`, `POST /run`) |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm test` | Vitest unit tests |

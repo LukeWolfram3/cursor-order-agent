@@ -5,6 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"mcp": "tsx src/mcp/index.ts",
+		"webhook": "tsx src/http/server.ts",
 		"typecheck": "node_modules/.bin/tsc --noEmit",
 		"test": "vitest run"
 	},
