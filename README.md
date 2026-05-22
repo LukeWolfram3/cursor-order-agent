@@ -34,7 +34,7 @@ pnpm mcp
 
 ## Cursor automation setup
 
-1. Push this repo to GitHub (`SYLKEMD/cursor-order-agent`).
+1. Repo: [LukeWolfram3/cursor-order-agent](https://github.com/LukeWolfram3/cursor-order-agent).
 2. At [cursor.com/automations](https://cursor.com/automations), create **Sales-Ops Order Agent (POC)**.
 3. Connect the repo. Model: **Claude Sonnet 4.6**.
 4. Paste `prompts/orchestrator/system.md` into **Agent Instructions**.
