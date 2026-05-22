@@ -10,7 +10,7 @@ import type { z } from 'zod';
 import type { AppEnv } from '../types.js';
 import { log, errorFields } from './log.js';
 
-const DEFAULT_MODEL = 'claude-sonnet-4-6-20250514';
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
 export function getAnthropicClient(apiKey: string): Anthropic {
 	return new Anthropic({ apiKey });

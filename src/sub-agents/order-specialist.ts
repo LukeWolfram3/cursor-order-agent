@@ -69,7 +69,9 @@ export async function runOrderSpecialistSubAgent(input: {
 		});
 
 		const parsed = poSpecialistResultSchema.parse({
-			...(raw as object),
+			specialist: 'order',
+			status: 'ok',
+			...(raw as Record<string, unknown>),
 			trace,
 		});
 

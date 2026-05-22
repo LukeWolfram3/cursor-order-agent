@@ -44,16 +44,34 @@ export async function runPOExtractorSubAgent(input: {
 			`Today's date: ${new Date().toISOString().slice(0, 10)}`,
 		].join('\n');
 
+		const attachmentBlocks: MessageParam['content'] = [];
+		for (const attachment of attachments) {
+			if (attachment.mimeType === 'application/pdf') {
+				attachmentBlocks.push({
+					type: 'document',
+					source: {
+						type: 'base64',
+						media_type: 'application/pdf',
+						data: attachment.contentBytes,
+					},
+				});
+				continue;
+			}
+			if (/^image\/(png|jpeg|jpg|webp|gif)$/i.test(attachment.mimeType)) {
+				attachmentBlocks.push({
+					type: 'image',
+					source: {
+						type: 'base64',
+						media_type: attachment.mimeType as 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif',
+						data: attachment.contentBytes,
+					},
+				});
+			}
+		}
+
 		const userContent: MessageParam['content'] = [
 			{ type: 'text', text: userText },
-			...attachments.map((attachment) => ({
-				type: 'document' as const,
-				source: {
-					type: 'base64' as const,
-					media_type: attachment.mimeType as 'application/pdf',
-					data: attachment.contentBytes,
-				},
-			})),
+			...attachmentBlocks,
 		];
 
 		const outputTool: InnerToolDefinition = {
