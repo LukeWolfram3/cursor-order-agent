@@ -14,7 +14,7 @@ const env = {
 	SHOPIFY_API_VERSION: '2026-01',
 } as ShopifyEnv;
 
-function locationNode(id: string, name: string, zip: string) {
+function locationNode(id: string, name: string, zip: string, emails: readonly string[] = []) {
 	return {
 		id,
 		name,
@@ -31,7 +31,16 @@ function locationNode(id: string, name: string, zip: string) {
 		},
 		billingAddress: null,
 		buyerExperienceConfiguration: { paymentTermsTemplate: { id: 'terms-1' } },
-		roleAssignments: { nodes: [] },
+		roleAssignments: {
+			nodes: emails.map((email, index) => ({
+				companyContact: {
+					customer: {
+						defaultEmailAddress: { emailAddress: email },
+					},
+				},
+				id: `node-${id}-${index}`,
+			})),
+		},
 	};
 }
 
@@ -57,45 +66,18 @@ describe('Shopify location queries', () => {
 		shopifyGraphQLMock.mockReset();
 	});
 
-	it('paginates company locations and role assignments for domain matching', async () => {
+	it('uses company location page role domains without detail fan-out for candidate matching', async () => {
 		shopifyGraphQLMock
 			.mockResolvedValueOnce({
 				companyLocations: {
-					edges: [{ node: locationNode('loc-1', 'North Hospital', '78701') }],
+					edges: [{ node: locationNode('loc-1', 'North Hospital', '78701', ['admin@north.example', 'buyer@hospital.org']) }],
 					pageInfo: { hasNextPage: true, endCursor: 'company-page-2' },
 				},
 			})
 			.mockResolvedValueOnce({
 				companyLocations: {
-					edges: [{ node: locationNode('loc-2', 'South Clinic', '73301') }],
+					edges: [{ node: locationNode('loc-2', 'South Clinic', '73301', ['buyer@other.org']) }],
 					pageInfo: { hasNextPage: false, endCursor: null },
-				},
-			})
-			.mockResolvedValueOnce({
-				companyLocation: {
-					...locationNode('loc-1', 'North Hospital', '78701'),
-					roleAssignments: {
-						edges: [roleEdge('1', 'admin@north.example')],
-						pageInfo: { hasNextPage: true, endCursor: 'roles-page-2' },
-					},
-				},
-			})
-			.mockResolvedValueOnce({
-				companyLocation: {
-					...locationNode('loc-1', 'North Hospital', '78701'),
-					roleAssignments: {
-						edges: [roleEdge('2', 'buyer@hospital.org')],
-						pageInfo: { hasNextPage: false, endCursor: null },
-					},
-				},
-			})
-			.mockResolvedValueOnce({
-				companyLocation: {
-					...locationNode('loc-2', 'South Clinic', '73301'),
-					roleAssignments: {
-						edges: [roleEdge('3', 'buyer@other.org')],
-						pageInfo: { hasNextPage: false, endCursor: null },
-					},
 				},
 			});
 
@@ -112,14 +94,15 @@ describe('Shopify location queries', () => {
 			id: 'loc-1',
 			emailDomains: ['north.example', 'hospital.org'],
 		})]);
-		expect(shopifyGraphQLMock).toHaveBeenCalledTimes(5);
+		expect(shopifyGraphQLMock).toHaveBeenCalledTimes(2);
 		expect(shopifyGraphQLMock.mock.calls.map((call) => call[0].variables)).toEqual([
 			{ cursor: null },
 			{ cursor: 'company-page-2' },
-			{ locationId: 'loc-1', cursor: null },
-			{ locationId: 'loc-1', cursor: 'roles-page-2' },
-			{ locationId: 'loc-2', cursor: null },
 		]);
+		const firstQuery = shopifyGraphQLMock.mock.calls[0]?.[0].query;
+		expect(firstQuery).toContain('companyLocations(first: 250, after: $cursor)');
+		expect(firstQuery).toContain('roleAssignments(first: 10)');
+		expect(firstQuery).toContain('defaultEmailAddress { emailAddress }');
 	});
 
 	it('returns customers from every role-assignment page', async () => {
