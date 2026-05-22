@@ -16,6 +16,50 @@ export function getAnthropicClient(apiKey: string): Anthropic {
 	return new Anthropic({ apiKey });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
+}
+
+function stringProperty(value: unknown, key: string): string | undefined {
+	if (!isRecord(value)) return undefined;
+	const property = value[key];
+	return typeof property === 'string' ? property : undefined;
+}
+
+export function contextualizeAnthropicError(error: unknown, modelKind: string): Error | undefined {
+	if (!isRecord(error) || error.status !== 401) {
+		return undefined;
+	}
+
+	const body = isRecord(error.error) ? error.error.error : undefined;
+	const bodyType = stringProperty(body, 'type');
+	const bodyMessage = stringProperty(body, 'message');
+	const message = error instanceof Error ? error.message : bodyMessage;
+	const requestId = stringProperty(error, 'request_id');
+	const isInvalidApiKey =
+		bodyType === 'authentication_error' ||
+		bodyMessage?.includes('x-api-key') ||
+		message?.includes('x-api-key');
+
+	if (!isInvalidApiKey) {
+		return undefined;
+	}
+
+	const requestSuffix = requestId ? ` Request ID: ${requestId}.` : '';
+	return new Error(
+		`Anthropic authentication failed while running ${modelKind}: ANTHROPIC_API_KEY was rejected by Anthropic (invalid x-api-key). Verify the MCP server secret value.${requestSuffix}`,
+		{ cause: error },
+	);
+}
+
+async function runAnthropicRequest<T>(modelKind: string, request: () => Promise<T>): Promise<T> {
+	try {
+		return await request();
+	} catch (error) {
+		throw contextualizeAnthropicError(error, modelKind) ?? error;
+	}
+}
+
 export function resolveModel(env: AppEnv, kind: 'classifier' | 'order' | 'extractor' | 'matcher'): string {
 	switch (kind) {
 		case 'classifier':
@@ -78,7 +122,7 @@ export async function runStructuredToolOutput<T>(options: {
 				? { type: 'any' as const }
 				: { type: 'tool' as const, name: options.outputTool.name };
 
-		const response = await client.messages.create({
+		const response = await runAnthropicRequest(options.modelKind, () => client.messages.create({
 			model,
 			max_tokens: options.maxTokens ?? 4096,
 			temperature: 0,
@@ -86,7 +130,7 @@ export async function runStructuredToolOutput<T>(options: {
 			tools: anthropicTools,
 			tool_choice: toolChoice,
 			messages,
-		});
+		}));
 
 		const toolUses = response.content.filter((block): block is ToolUseBlock => block.type === 'tool_use');
 		if (toolUses.length === 0) {
@@ -173,7 +217,7 @@ export async function runToolLoop(options: {
 	for (let step = 0; step < maxSteps; step++) {
 		log('info', 'agent.step', { step, model });
 
-		const response = await client.messages.create({
+		const response = await runAnthropicRequest(options.modelKind, () => client.messages.create({
 			model,
 			max_tokens: options.maxTokens ?? 8000,
 			temperature: 0,
@@ -181,7 +225,7 @@ export async function runToolLoop(options: {
 			tools: anthropicTools,
 			tool_choice: { type: 'auto' },
 			messages,
-		});
+		}));
 
 		const toolUses = response.content.filter((block): block is ToolUseBlock => block.type === 'tool_use');
 		const textBlocks = response.content.filter((block) => block.type === 'text');
