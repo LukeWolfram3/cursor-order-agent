@@ -92,6 +92,10 @@ Paste a Microsoft Graph-shaped JSON payload into Cursor chat (see `test-data/ema
 
 The `trace` array lists tool phases (`tool.start` / `tool.completed`) for iteration.
 
+## Troubleshooting
+
+- `401 authentication_error: invalid x-api-key` from `classify_email` means the MCP server reached Anthropic, but the configured `ANTHROPIC_API_KEY` was rejected. Verify or rotate the Anthropic key in the MCP server/automation secrets, then rerun the automation.
+
 ## Test data
 
 Do **not** commit production emails. Drop fixtures into:
