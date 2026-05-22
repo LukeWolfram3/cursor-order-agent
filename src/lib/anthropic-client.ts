@@ -30,7 +30,7 @@ export function resolveModel(env: AppEnv, kind: 'classifier' | 'order' | 'extrac
 }
 
 export function zodToolSchema(schema: z.ZodTypeAny, name: string, description: string): Tool {
-	const jsonSchema = zodToJsonSchema(schema, { name, $refStrategy: 'none' });
+	const jsonSchema = zodToJsonSchema(schema, { $refStrategy: 'none' });
 	return {
 		name,
 		description,
