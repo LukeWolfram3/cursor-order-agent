@@ -348,24 +348,9 @@ export async function fetchAllCompanyLocations(env: ShopifyEnv): Promise<Shopify
 	return locations;
 }
 
-async function enrichLocationsWithRoleEmailDomains(
-	env: ShopifyEnv,
-	locations: readonly ShopifyLocationSummary[],
-): Promise<ShopifyLocationSummary[]> {
-	const enriched: ShopifyLocationSummary[] = [];
-	for (const location of locations) {
-		const node = await fetchLocationDetailsNode(env, location.id);
-		enriched.push(node ? (mapLocation(node) ?? location) : location);
-	}
-	return enriched;
-}
-
 export async function getLocationCandidates(input: LocationCandidateInput): Promise<LocationCandidates> {
 	const domain = emailDomain(input.buyerEmail);
-	let locations = await fetchAllCompanyLocations(input.env);
-	if (domain) {
-		locations = await enrichLocationsWithRoleEmailDomains(input.env, locations);
-	}
+	const locations = await fetchAllCompanyLocations(input.env);
 	const prefix = zipPrefix(input.zip ?? input.shipToAddress);
 
 	const fuzzyTop3 = [...locations]
