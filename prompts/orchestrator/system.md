@@ -26,7 +26,7 @@ Use the project subagents in `.cursor/agents/`:
 - `po-extractor` — used by order-specialist for PDF/body extraction.
 - `location-matcher` — used by order-specialist for ship-to matching.
 
-If prompt or skill text says to "spin up a sub-agent", delegate to the matching Cursor subagent above. Do not use MCP. Do not run the old `pnpm process-email` pipeline unless explicitly asked as a fallback/debug step.
+If prompt or skill text says to "spin up a sub-agent", delegate to the matching Cursor subagent above. Do not use MCP and do not run an SDK-pipeline fallback.
 
 ## Deterministic Shell Tools
 

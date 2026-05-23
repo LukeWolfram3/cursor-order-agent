@@ -4,7 +4,7 @@ Architecture for processing SYLKE sales-ops order emails via a **Cursor cloud au
 
 1. **Cursor main agent** — saves the webhook payload to a temp file and delegates to repo-defined Cursor subagents.
 2. **Cursor subagent roster** — `.cursor/agents/*` contains classifier, order-specialist, PO extractor, and location matcher agents.
-3. **Deterministic shell tools** — `pnpm order-tool <tool> <input.json>` exposes Shopify reads and dry-run planners without MCP.
+3. **Deterministic shell tools** — `pnpm order-tool <tool> <input.json>` exposes Shopify reads and dry-run planners.
 
 Shopify **reads are real**. All **writes are dry-run only** (`wouldMutateShopify: false`).
 
@@ -12,7 +12,7 @@ Shopify **reads are real**. All **writes are dry-run only** (`wouldMutateShopify
 
 - Node.js 22+
 - pnpm
-- Secrets: `ANTHROPIC_API_KEY`, `SHOPIFY_KEY` (or `SHOPIFY_ADMIN_ACCESS_TOKEN`), `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_API_VERSION`
+- Secrets: `SHOPIFY_KEY` (or `SHOPIFY_ADMIN_ACCESS_TOKEN`), `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_API_VERSION`
 
 ## Setup (local)
 
@@ -30,45 +30,7 @@ Run a deterministic helper tool against a saved input:
 pnpm order-tool shopify_get_location_candidates /tmp/location-input.json
 ```
 
-The legacy SDK pipeline (`pnpm process-email`) and stdio MCP server (`pnpm mcp`) still exist for local experiments, but the Cursor automation path does not depend on them.
-
-Run the HTTP webhook server (for external callers / Power Automate):
-
-```bash
-pnpm webhook
-```
-
-Listens on `PORT` (default **8787**). Endpoints:
-
-| Method | Path | Auth | Purpose |
-|--------|------|------|---------|
-| `POST` | `/webhook` or `/run` | `Authorization: Bearer $WEBHOOK_SECRET` | Classify email + run order specialist when applicable |
-| `GET` | `/health` | none | Liveness check |
-
-Request body (Graph-shaped JSON):
-
-```json
-{
-  "graph": {
-    "message": { "id": "...", "subject": "...", "body": { "contentType": "text", "content": "..." } },
-    "attachments": { "value": [] }
-  },
-  "prompt": "optional free-text note for logging/metadata"
-}
-```
-
-Response: `{ classification, orderSpecialist?, message?, prompt? }`. The pipeline mirrors the Cursor orchestrator: classify first; if `specialist === "order"` and `confidence >= 0.5`, run the order specialist; otherwise return classification only.
-
-Example:
-
-```bash
-curl -sS -X POST "http://localhost:8787/webhook" \
-  -H "Authorization: Bearer $WEBHOOK_SECRET" \
-  -H "Content-Type: application/json" \
-  -d @test-data/emails/sample.json
-```
-
-After deploy, point external callers at `https://<your-host>/webhook` (or `/run`) with the same Bearer token. Set `WEBHOOK_SECRET` (or `WEBHOOK_API_KEY`) plus the Shopify/Anthropic env vars on the host.
+This branch intentionally tests Cursor-native subagent delegation only.
 
 ## Cursor automation setup
 
@@ -76,7 +38,7 @@ After deploy, point external callers at `https://<your-host>/webhook` (or `/run`
 2. At [cursor.com/automations](https://cursor.com/automations), create **Sales-Ops Order Agent (POC)**.
 3. Connect the repo. Model: **Claude Sonnet 4.6**.
 4. Paste `prompts/orchestrator/system.md` into **Agent Instructions**.
-5. Configure secrets: `SHOPIFY_KEY`, `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_API_VERSION`, `ANTHROPIC_API_KEY`.
+5. Configure secrets: `SHOPIFY_KEY`, `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_API_VERSION`.
 6. Use a webhook trigger for test runs.
 
 ## Using the POC
@@ -91,15 +53,20 @@ Post a Microsoft Graph-shaped JSON payload to the Cursor automation webhook (see
 
 The `trace` array lists tool phases (`tool.start` / `tool.completed`) for iteration.
 
-### Attachment byte handling
+### Attachment handling
 
-The MCP server stages Graph attachment `contentBytes` in process memory by `message.id` + `attachment.id` before invoking classifier/order agents. Agent prompts and the order-specialist tool loop receive only attachment metadata and byte-availability flags; the extractor resolves staged bytes internally when `extract_order_data` is called with `attachmentIds`.
+For test fixtures, use `localPath` in the webhook payload, for example:
 
-For Cursor chat/automation routing, pass full attachment bytes to `classify_email` once, then omit `contentBytes` from the `run_order_specialist` graph for the same message. For webhook/server-side runs, the HTTP pipeline stages bytes before classification and reuses the sanitized graph for the order specialist automatically.
+```json
+{
+  "id": "attachment-po-2208145-final-document",
+  "name": "Company 1 PurchaseOrder 2208145 Email Final Document.pdf",
+  "contentType": "application/pdf",
+  "localPath": "test-run-data/Company 1 PurchaseOrder 2208145 Email Final Document.pdf"
+}
+```
 
-## Troubleshooting
-
-- `401 authentication_error: invalid x-api-key` from `classify_email` means the MCP server reached Anthropic, but the configured `ANTHROPIC_API_KEY` was rejected. Verify or rotate the Anthropic key in the MCP server/automation secrets, then rerun the automation.
+Cursor subagents read the repo-local file directly. Do not send large `contentBytes` through the Cursor automation webhook for this experiment.
 
 ## Test data
 
@@ -110,9 +77,9 @@ Do **not** commit production emails. Drop fixtures into:
 
 ## Iterating prompts
 
-1. Edit markdown under `prompts/` (loaded at runtime by the CLI/HTTP/MCP pipeline).
+1. Edit markdown under `prompts/` or `.cursor/agents/`.
 2. `git commit && git push`
-3. Re-run the automation — no MCP rebuild required beyond repo sync.
+3. Re-run the automation after the repo syncs.
 
 Key files:
 
@@ -127,7 +94,7 @@ Key files:
 ## Adding a new specialist
 
 1. Implement `src/sub-agents/<name>.ts` + prompts.
-2. Wire the specialist in the CLI/HTTP pipeline.
+2. Add or update the corresponding `.cursor/agents/<specialist>.md`.
 3. Extend `prompts/orchestrator/system.md` dispatch instructions if needed.
 4. Wire `CLASSIFIER_OPTIONS` in `src/lib/classifier-options.ts`.
 
@@ -149,9 +116,6 @@ Key files:
 
 | Script | Purpose |
 |--------|---------|
-| `pnpm mcp` | Start stdio MCP server |
-| `pnpm process-email <payload.json>` | Legacy SDK pipeline from a JSON payload |
 | `pnpm order-tool <tool> <input.json>` | Deterministic Shopify read / dry-run helper for Cursor subagents |
-| `pnpm webhook` | Start HTTP webhook server (`POST /webhook`, `POST /run`) |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm test` | Vitest unit tests |
