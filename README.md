@@ -2,11 +2,9 @@
 
 Architecture for processing SYLKE sales-ops order emails via a **Cursor cloud automation**:
 
-1. **Cursor runner** — saves the webhook payload to a temp file and runs `pnpm process-email <payload.json>`.
-2. **CLI pipeline** — `src/cli/process-email.ts` calls the same classify/order code as the HTTP webhook.
-3. **Sub-agents** — each makes its own `@anthropic-ai/sdk` call inside the Node process:
-   - Classifier (`classify_email`)
-   - Order specialist (`run_order_specialist`) with inner tools (extract, location match, Shopify reads, dry-run planners)
+1. **Cursor main agent** — saves the webhook payload to a temp file and delegates to repo-defined Cursor subagents.
+2. **Cursor subagent roster** — `.cursor/agents/*` contains classifier, order-specialist, PO extractor, and location matcher agents.
+3. **Deterministic shell tools** — `pnpm order-tool <tool> <input.json>` exposes Shopify reads and dry-run planners without MCP.
 
 Shopify **reads are real**. All **writes are dry-run only** (`wouldMutateShopify: false`).
 
@@ -26,13 +24,13 @@ pnpm typecheck
 pnpm test
 ```
 
-Run the CLI pipeline against a saved payload:
+Run a deterministic helper tool against a saved input:
 
 ```bash
-pnpm process-email test-data/emails/example.json
+pnpm order-tool shopify_get_location_candidates /tmp/location-input.json
 ```
 
-The stdio MCP server (`pnpm mcp`) still exists for local experiments, but the Cursor automation path does not depend on MCP.
+The legacy SDK pipeline (`pnpm process-email`) and stdio MCP server (`pnpm mcp`) still exist for local experiments, but the Cursor automation path does not depend on them.
 
 Run the HTTP webhook server (for external callers / Power Automate):
 
@@ -83,11 +81,13 @@ After deploy, point external callers at `https://<your-host>/webhook` (or `/run`
 
 ## Using the POC
 
-Post a Microsoft Graph-shaped JSON payload to the Cursor automation webhook (see `test-data/emails/` — you provide fixtures). The runner will:
+Post a Microsoft Graph-shaped JSON payload to the Cursor automation webhook (see `test-data/emails/` — you provide fixtures). The main agent will:
 
 1. Save the payload to `/tmp/order-agent-input.json`
-2. Run `pnpm process-email /tmp/order-agent-input.json`
-3. Return the CLI's JSON result
+2. Delegate classification to `email-classifier`
+3. If it is an order, delegate processing to `order-specialist`
+4. Use `pnpm order-tool` commands for deterministic Shopify reads and dry-run planning
+5. Return the structured result
 
 The `trace` array lists tool phases (`tool.start` / `tool.completed`) for iteration.
 
@@ -150,7 +150,8 @@ Key files:
 | Script | Purpose |
 |--------|---------|
 | `pnpm mcp` | Start stdio MCP server |
-| `pnpm process-email <payload.json>` | Run the full sales-ops pipeline from a JSON payload |
+| `pnpm process-email <payload.json>` | Legacy SDK pipeline from a JSON payload |
+| `pnpm order-tool <tool> <input.json>` | Deterministic Shopify read / dry-run helper for Cursor subagents |
 | `pnpm webhook` | Start HTTP webhook server (`POST /webhook`, `POST /run`) |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm test` | Vitest unit tests |
