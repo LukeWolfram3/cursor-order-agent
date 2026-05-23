@@ -1,4 +1,7 @@
 import type { IncomingMessage } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import type {
 	ClassificationResult,
@@ -12,6 +15,8 @@ import { runOrderSpecialistSubAgent } from '../sub-agents/order-specialist.js';
 import { stageGraphAttachmentBytes } from '../lib/attachments/byte-store.js';
 import { checkBearerAuth, getWebhookSecret } from './auth.js';
 import { sendJson } from './responses.js';
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 const webhookBodySchema = z.object({
 	graph: z
@@ -39,9 +44,51 @@ export function parseWebhookBody(body: unknown): WebhookRunInput | null {
 	return parsed.success ? parsed.data : null;
 }
 
+function resolveRepoLocalPath(localPath: string): string {
+	if (path.isAbsolute(localPath)) {
+		if (!localPath.startsWith(REPO_ROOT + path.sep)) {
+			throw new Error(`Attachment localPath must be inside the repository: ${localPath}`);
+		}
+		return localPath;
+	}
+
+	const resolved = path.resolve(REPO_ROOT, localPath);
+	if (!resolved.startsWith(REPO_ROOT + path.sep)) {
+		throw new Error(`Attachment localPath must stay inside the repository: ${localPath}`);
+	}
+	return resolved;
+}
+
+async function hydrateLocalAttachmentBytes(graph: GraphMailSimulation): Promise<GraphMailSimulation> {
+	const attachments = graph.attachments?.value ?? [];
+	if (attachments.length === 0) return graph;
+
+	let hydratedAny = false;
+	const hydratedAttachments = await Promise.all(attachments.map(async (attachment) => {
+		if (attachment.contentBytes || !attachment.localPath) return attachment;
+
+		hydratedAny = true;
+		const contentBytes = await readFile(resolveRepoLocalPath(attachment.localPath), 'base64');
+		return {
+			...attachment,
+			contentBytes,
+		};
+	}));
+
+	if (!hydratedAny) return graph;
+
+	return {
+		...graph,
+		attachments: {
+			...graph.attachments,
+			value: hydratedAttachments,
+		},
+	};
+}
+
 export async function runSalesOpsPipeline(input: WebhookRunInput): Promise<WebhookRunResult> {
 	const env = getAppEnv();
-	const graph = stageGraphAttachmentBytes(input.graph);
+	const graph = stageGraphAttachmentBytes(await hydrateLocalAttachmentBytes(input.graph));
 	const classification = await runClassifierSubAgent({ env, graph });
 
 	if (classification.specialist === 'order' && classification.confidence >= 0.5) {

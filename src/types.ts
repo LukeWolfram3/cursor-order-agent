@@ -63,6 +63,7 @@ export interface GraphAttachment {
 	readonly contentId?: string | null;
 	readonly contentBytes?: string;
 	readonly contentBytesRef?: string;
+	readonly localPath?: string;
 }
 
 export interface GraphAttachmentsResponse {

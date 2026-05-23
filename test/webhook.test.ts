@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { ClassificationResult, GraphMailSimulation, OrderSpecialistMcpResult } from '../src/types.js';
 import { checkBearerAuth, getWebhookSecret } from '../src/http/auth.js';
 import { parseWebhookBody, runSalesOpsPipeline } from '../src/http/run-handler.js';
@@ -103,6 +105,48 @@ describe('runSalesOpsPipeline', () => {
 			graph: sampleGraph,
 			classificationReason: classification.reason,
 		});
+	});
+
+	it('hydrates attachment contentBytes from repo-local localPath before staging', async () => {
+		const tmp = join(process.cwd(), 'test-tmp-localpath');
+		const filePath = join(tmp, 'po.pdf');
+		await mkdir(tmp, { recursive: true });
+		await writeFile(filePath, Buffer.from('%PDF-test'));
+
+		try {
+			vi.mocked(runClassifierSubAgent).mockResolvedValue(classification);
+			vi.mocked(runOrderSpecialistSubAgent).mockResolvedValue(orderResult);
+
+			const graph: GraphMailSimulation = {
+				...sampleGraph,
+				attachments: {
+					value: [{
+						id: 'att-1',
+						name: 'po.pdf',
+						contentType: 'application/pdf',
+						localPath: 'test-tmp-localpath/po.pdf',
+					}],
+				},
+			};
+
+			await expect(runSalesOpsPipeline({ graph })).resolves.toMatchObject({
+				classification,
+				orderSpecialist: orderResult,
+			});
+			expect(runClassifierSubAgent).toHaveBeenCalledWith({
+				env: expect.objectContaining({ ANTHROPIC_API_KEY: 'test-key' }),
+				graph: expect.objectContaining({
+					attachments: {
+						value: [expect.objectContaining({
+							id: 'att-1',
+							contentBytesRef: expect.stringMatching(/^staged-attachment:/),
+						})],
+					},
+				}),
+			});
+		} finally {
+			await rm(tmp, { recursive: true, force: true });
+		}
 	});
 
 	it('returns classification only for non-order specialists', async () => {

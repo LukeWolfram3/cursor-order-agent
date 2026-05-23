@@ -15,6 +15,8 @@ The user pastes a JSON object shaped like:
 
 Validate that `message.id` exists. If attachments are present, pass them through unchanged in the `graph` payload. Webhook runs may provide the payload as `{ "prompt": "...", "graph": { ... } }`; preserve that shape when writing the temporary file.
 
+For test fixtures, attachments may include `localPath` instead of `contentBytes`, e.g. `"localPath": "test-run-data/example.pdf"`. Preserve `localPath` exactly; the CLI will read the file from the repository and hydrate the PDF bytes internally.
+
 ## Execution Command
 
 Use shell, not MCP.
