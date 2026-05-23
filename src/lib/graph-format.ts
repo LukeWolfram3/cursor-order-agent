@@ -5,6 +5,10 @@ import type {
 	GraphMailSimulation,
 	GraphRecipient,
 } from '../types.js';
+import {
+	hasResolvableAttachmentBytes,
+	resolveAttachmentBytes,
+} from './attachments/byte-store.js';
 
 export interface AgentAttachmentContent {
 	readonly attachmentId: string;
@@ -25,14 +29,20 @@ function formatRecipientList(recipients: readonly GraphRecipient[] | undefined):
 	return recipients.map(formatRecipient).join(', ');
 }
 
-function formatAttachment(attachment: GraphAttachment): string {
+function formatAttachment(messageId: string, attachment: GraphAttachment): string {
+	const hasInlineContentBytes = typeof attachment.contentBytes === 'string';
+	const hasReference = typeof attachment.contentBytesRef === 'string';
+	const hasResolvedContentBytes = hasResolvableAttachmentBytes({ messageId, attachment });
+
 	return [
 		`- id: ${attachment.id}`,
 		`  name: ${attachment.name}`,
 		`  type: ${attachment.contentType ?? '[unknown]'}`,
 		`  size: ${attachment.size ?? '[unknown]'}`,
 		`  inline: ${attachment.isInline ?? false}`,
-		`  hasContentBytes: ${typeof attachment.contentBytes === 'string'}`,
+		`  hasInlineContentBytes: ${hasInlineContentBytes}`,
+		`  hasContentBytesRef: ${hasReference}`,
+		`  hasResolvedContentBytes: ${hasResolvedContentBytes}`,
 	].join('\n');
 }
 
@@ -75,7 +85,8 @@ export function getModelReadableAttachments(
 
 	return attachments.flatMap((attachment): AgentAttachmentContent[] => {
 		if (attachmentIdSet && !attachmentIdSet.has(attachment.id)) return [];
-		if (!attachment.contentBytes) return [];
+		const contentBytes = resolveAttachmentBytes({ messageId: graph.message.id, attachment });
+		if (!contentBytes) return [];
 
 		const mimeType = mimeTypeForAttachment(attachment, graph.attachmentInspections ?? []);
 		if (!isModelReadableMimeType(mimeType)) return [];
@@ -84,7 +95,7 @@ export function getModelReadableAttachments(
 			attachmentId: attachment.id,
 			filename: attachment.name,
 			mimeType,
-			contentBytes: attachment.contentBytes,
+			contentBytes,
 		}];
 	});
 }
@@ -133,7 +144,7 @@ export function buildGraphMailText(graph: GraphMailSimulation): string {
 		'body.content:',
 		message.body?.content ?? message.bodyPreview ?? '[none]',
 		'attachments:',
-		attachments.length > 0 ? attachments.map(formatAttachment).join('\n') : '[none]',
+		attachments.length > 0 ? attachments.map((attachment) => formatAttachment(message.id, attachment)).join('\n') : '[none]',
 		'attachmentInspections:',
 		attachmentInspections.length > 0 ? attachmentInspections.map(formatAttachmentInspection).join('\n') : '[none]',
 	].join('\n');
