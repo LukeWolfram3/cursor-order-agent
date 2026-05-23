@@ -1,10 +1,10 @@
 # Cursor Sales-Ops Order Agent (POC)
 
-Three-layer architecture for processing SYLKE sales-ops order emails via a **Cursor cloud automation**:
+Architecture for processing SYLKE sales-ops order emails via a **Cursor cloud automation**:
 
-1. **Cursor orchestrator** — thin router (`prompts/orchestrator/system.md`). Only calls two MCP tools.
-2. **stdio MCP server** — `pnpm mcp` → `src/mcp/index.ts`
-3. **Sub-agents** — each makes its own `@anthropic-ai/sdk` call inside the MCP process:
+1. **Cursor runner** — saves the webhook payload to a temp file and runs `pnpm process-email <payload.json>`.
+2. **CLI pipeline** — `src/cli/process-email.ts` calls the same classify/order code as the HTTP webhook.
+3. **Sub-agents** — each makes its own `@anthropic-ai/sdk` call inside the Node process:
    - Classifier (`classify_email`)
    - Order specialist (`run_order_specialist`) with inner tools (extract, location match, Shopify reads, dry-run planners)
 
@@ -26,11 +26,13 @@ pnpm typecheck
 pnpm test
 ```
 
-Run the MCP server (stdio):
+Run the CLI pipeline against a saved payload:
 
 ```bash
-pnpm mcp
+pnpm process-email test-data/emails/example.json
 ```
+
+The stdio MCP server (`pnpm mcp`) still exists for local experiments, but the Cursor automation path does not depend on MCP.
 
 Run the HTTP webhook server (for external callers / Power Automate):
 
@@ -76,19 +78,16 @@ After deploy, point external callers at `https://<your-host>/webhook` (or `/run`
 2. At [cursor.com/automations](https://cursor.com/automations), create **Sales-Ops Order Agent (POC)**.
 3. Connect the repo. Model: **Claude Sonnet 4.6**.
 4. Paste `prompts/orchestrator/system.md` into **Agent Instructions**.
-5. At team level ([cursor.com/agents](https://cursor.com/agents)), add MCP server **order-agent-mcp**:
-   - Transport: stdio
-   - Command: `pnpm tsx /workspace/src/mcp/index.ts` (or `pnpm mcp` if the VM cwd is the repo root)
-6. Enable the MCP server on this automation.
-7. Configure secrets: `SHOPIFY_KEY`, `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_API_VERSION`, `ANTHROPIC_API_KEY`.
-8. Enable **chat** trigger only.
+5. Configure secrets: `SHOPIFY_KEY`, `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_API_VERSION`, `ANTHROPIC_API_KEY`.
+6. Use a webhook trigger for test runs.
 
 ## Using the POC
 
-Paste a Microsoft Graph-shaped JSON payload into Cursor chat (see `test-data/emails/` — you provide fixtures). The orchestrator will:
+Post a Microsoft Graph-shaped JSON payload to the Cursor automation webhook (see `test-data/emails/` — you provide fixtures). The runner will:
 
-1. `classify_email` → `{ specialist, confidence, reason }`
-2. If `specialist === "order"`, `run_order_specialist` → `{ summary, text, trace }`
+1. Save the payload to `/tmp/order-agent-input.json`
+2. Run `pnpm process-email /tmp/order-agent-input.json`
+3. Return the CLI's JSON result
 
 The `trace` array lists tool phases (`tool.start` / `tool.completed`) for iteration.
 
@@ -111,7 +110,7 @@ Do **not** commit production emails. Drop fixtures into:
 
 ## Iterating prompts
 
-1. Edit markdown under `prompts/` (loaded at runtime by the MCP server).
+1. Edit markdown under `prompts/` (loaded at runtime by the CLI/HTTP/MCP pipeline).
 2. `git commit && git push`
 3. Re-run the automation — no MCP rebuild required beyond repo sync.
 
@@ -128,10 +127,9 @@ Key files:
 ## Adding a new specialist
 
 1. Implement `src/sub-agents/<name>.ts` + prompts.
-2. Add `src/mcp/tools-exposed/run-<name>-specialist.ts`.
-3. Register the tool in `src/mcp/index.ts`.
-4. Extend `prompts/orchestrator/system.md` dispatch rules.
-5. Wire `CLASSIFIER_OPTIONS` in `src/lib/classifier-options.ts`.
+2. Wire the specialist in the CLI/HTTP pipeline.
+3. Extend `prompts/orchestrator/system.md` dispatch instructions if needed.
+4. Wire `CLASSIFIER_OPTIONS` in `src/lib/classifier-options.ts`.
 
 ## Architecture notes
 
@@ -152,6 +150,7 @@ Key files:
 | Script | Purpose |
 |--------|---------|
 | `pnpm mcp` | Start stdio MCP server |
+| `pnpm process-email <payload.json>` | Run the full sales-ops pipeline from a JSON payload |
 | `pnpm webhook` | Start HTTP webhook server (`POST /webhook`, `POST /run`) |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm test` | Vitest unit tests |

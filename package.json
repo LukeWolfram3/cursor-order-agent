@@ -6,6 +6,7 @@
 	"scripts": {
 		"mcp": "tsx src/mcp/index.ts",
 		"webhook": "tsx src/http/server.ts",
+		"process-email": "tsx src/cli/process-email.ts",
 		"typecheck": "node_modules/.bin/tsc --noEmit",
 		"test": "vitest run"
 	},
